@@ -111,24 +111,6 @@ private:
     std::atomic_bool Locked = {false};
 };
 
-class RelaxTasSpinLock
-{
-public:
-    ALWAYS_INLINE void Enter()
-    {
-        while (Locked.exchange(true, std::memory_order_acquire))
-            CpuRelax();
-    }
-
-    ALWAYS_INLINE void Leave()
-    {
-        Locked.store(false, std::memory_order_release);
-    }
-
-private:
-    std::atomic_bool Locked = {false};
-};
-
 class TTasSpinLock
 {
 public:
