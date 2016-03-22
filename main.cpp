@@ -21,6 +21,7 @@ std::vector<std::chrono::milliseconds> CreateBenchmarkRuns(size_t numRuns, size_
 {
     std::vector<std::chrono::milliseconds> runs(numRuns);
     const size_t numItersPerThread = numItersPerRun/numThreads;
+    volatile std::atomic_size_t cnt = {0};
 
     for (size_t i=0; i<numRuns; i++)
     {
@@ -31,9 +32,9 @@ std::vector<std::chrono::milliseconds> CreateBenchmarkRuns(size_t numRuns, size_
 
         for (size_t j=0; j<numThreads; j++)
         {
-            futures[j] = std::async(std::launch::async, [&]()
+            futures[j] = std::async(std::launch::async, [&, j]()
             {
-                BindThisThreadToCore();
+                //BindThisThreadToCore(j);
 
                 // Wait until all threads are ready
                 numThreadsReady++;
@@ -46,7 +47,8 @@ std::vector<std::chrono::milliseconds> CreateBenchmarkRuns(size_t numRuns, size_
                     //McsLock::QNode node;
                     //lock.Enter(node);
                     lock.Enter();
-                    for (volatile size_t l=0; l<16; l++);
+                    for (size_t l=0; l<16; l++)
+                        cnt++;
                     //lock.Leave(node);
                     lock.Leave();
                 }
@@ -160,7 +162,6 @@ void RunBenchmarks()
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     for (size_t i=1; i<=std::thread::hardware_concurrency(); i++)
-    //size_t i=4;
     {
         const size_t numRuns = 5;
         const size_t numItersPerRun = 1000000;
@@ -175,7 +176,6 @@ void RunBenchmarks()
 #endif
         RunBenchmark<ScTasSpinLock>("ScTasSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<TasSpinLock>("TasSpinLock", numRuns, numItersPerRun, i);
-        RunBenchmark<RelaxTasSpinLock>("RelaxTasSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<TTasSpinLock>("TTasSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<RelaxTTasSpinLock>("RelaxTTasSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<ExpBoRelaxTTasSpinLock>("ExpBoRelaxTTasSpinLock", numRuns, numItersPerRun, i);
