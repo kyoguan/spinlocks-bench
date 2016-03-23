@@ -26,9 +26,9 @@ constexpr size_t CACHELINE_SIZE = 64;
 
 ALWAYS_INLINE static void CpuRelax()
 {
-#if (COMPILER == MVCC)
+#if (OS == WIN)
     _mm_pause();
-#elif (COMPILER == GCC || COMPILER == LLVM)
+#elif (OS == UNIX)
     asm("pause");
 #endif
 }
