@@ -10,7 +10,7 @@ constexpr size_t CACHELINE_SIZE = 64;
 
 #define WIN     0
 #define UNIX    1
-#define OS      UNIX
+#define OS      WIN
 
 #if (OS == WIN)
     #define WIN32_LEAN_AND_MEAN
@@ -57,7 +57,7 @@ ALWAYS_INLINE void BindThisThreadToCore(size_t threadIdx)
 #if (OS == WIN)
     assert(threadIdx < 64);
     const auto thisThread = GetCurrentThread();
-    const auto res0 = SetThreadAffinityMask(thisThread, 1ULL<<threadIdxCounter);
+    const auto res0 = SetThreadAffinityMask(thisThread, 1ULL<<threadIdx);
     assert(res0 != 0);
     const auto res1 = SetThreadPriority(thisThread, THREAD_PRIORITY_TIME_CRITICAL);
     assert(res1);

@@ -182,6 +182,8 @@ void RunBenchmarks()
 
         RunBenchmark<TicketSpinLock>("TicketSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<PropBoTicketSpinLock>("PropBoTicketSpinLock", numRuns, numItersPerRun, i);
+        RunBenchmark<AndersonSpinLock>("AndersonSpinLock", numRuns, numItersPerRun, i);
+        RunBenchmark<GraunkeAndThakkarSpinLock>("GraunkeAndThakkarSpinLock", numRuns, numItersPerRun, i);
 #if 0
         RunBenchmark<SpinRwLockNaive>("SpinRwLockNaive", numRuns, numItersPerRun, i);
         RunBenchmark<SpinRwLockNaivePerThreadReadCounts>("SpinRwLockNaivePerThreadReadCounts", numRuns, numItersPerRun, i);

@@ -263,6 +263,103 @@ private:
 
 static_assert(sizeof(PropBoTicketSpinLock) == 2*CACHELINE_SIZE, "");
 
+class AndersonSpinLock
+{
+public:
+    AndersonSpinLock(size_t maxThreads=std::thread::hardware_concurrency()) :
+        LockedFlags(maxThreads)
+    {
+        for (auto &flag : LockedFlags)
+            flag.first = true;
+
+        LockedFlags[0].first = false;
+    }
+
+    ALWAYS_INLINE void Enter()
+    {
+        const size_t index = NextFreeIdx.fetch_add(1)%LockedFlags.size();
+        auto &flag = LockedFlags[index].first;
+
+        // Ensure overflow never happens
+        if (index == 0)
+            NextFreeIdx -= LockedFlags.size();
+
+        while (flag)
+            CpuRelax();
+            
+        flag = true;
+    }
+
+    ALWAYS_INLINE void Leave()
+    {
+        const size_t idx = NextServingIdx.fetch_add(1);
+        LockedFlags[idx%LockedFlags.size()].first = false;
+    }
+
+private:
+    using PaddedFlag = std::pair<std::atomic_bool, uint8_t[CACHELINE_SIZE-sizeof(std::atomic_bool)]>;
+    using PaddedFlagVector = std::vector<PaddedFlag>;
+
+    static_assert(sizeof(PaddedFlag) == CACHELINE_SIZE, "");
+
+    alignas(CACHELINE_SIZE) PaddedFlagVector   LockedFlags;
+    alignas(CACHELINE_SIZE) std::atomic_size_t NextFreeIdx = {0};
+    alignas(CACHELINE_SIZE) std::atomic_size_t NextServingIdx = {1};
+};
+
+class GraunkeAndThakkarSpinLock
+{
+public:
+    GraunkeAndThakkarSpinLock(size_t maxThreads=std::thread::hardware_concurrency()) :
+        LockedFlags(maxThreads)
+    {
+        assert(Tail.is_lock_free());
+        std::fill(LockedFlags.begin(), LockedFlags.end(), 1);
+        Tail = reinterpret_cast<uintptr_t>(&LockedFlags[0]);
+        assert((Tail&1) == 0); // Make sure there's space to store the old flag value in the LSB
+    }
+
+    ALWAYS_INLINE void Enter()
+    {
+        // Create new tail by chaining my synchronization variable into the list
+        const auto &newFlag = LockedFlags[GetThreadIndex()];
+        const auto newTail = reinterpret_cast<uintptr_t>(&newFlag)|static_cast<uintptr_t>(newFlag);
+        const auto ahead = Tail.exchange(newTail);
+
+        // Extract flag and old value of previous thread in line, so that we can wait for its completion
+        const auto *aheadFlag = reinterpret_cast<std::atomic_uint16_t *>(ahead&(~static_cast<uintptr_t>(1)));
+        const auto aheadValue = static_cast<uint16_t>(ahead&1);
+
+        // Wait for previous thread in line to flip my synchronization variable
+        while (aheadFlag->load() == aheadValue)
+            CpuRelax();
+    }
+    
+    ALWAYS_INLINE void Leave()
+    {
+        // Flipping synchronization variable enables next thread in line to enter CS
+        auto &flag = LockedFlags[GetThreadIndex()];
+        flag = !flag;
+    }
+    
+private:
+    ALWAYS_INLINE size_t GetThreadIndex() const
+    {
+        static std::atomic_size_t threadCounter = {0};
+        thread_local size_t threadIdx = threadCounter++;
+        assert(threadIdx < LockedFlags.size());
+        return threadIdx;
+    }
+
+private:
+    // In the LSB the old value of the flag is stored
+    std::atomic<uintptr_t>            Tail;
+    std::vector<std::atomic_uint16_t> LockedFlags;
+
+    static_assert(sizeof(decltype(LockedFlags)::value_type) > 1,
+                  "Flag size > 1 required: thanks to alginment, old flag value can be stored in LSB");
+};
+
 class McsLock
 {
 public:
