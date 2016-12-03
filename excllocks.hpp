@@ -298,13 +298,11 @@ public:
 
 private:
     using PaddedFlag = std::pair<std::atomic_bool, uint8_t[CACHELINE_SIZE-sizeof(std::atomic_bool)]>;
-    using PaddedFlagVector = std::vector<PaddedFlag>;
-
     static_assert(sizeof(PaddedFlag) == CACHELINE_SIZE, "");
 
-    alignas(CACHELINE_SIZE) PaddedFlagVector   LockedFlags;
-    alignas(CACHELINE_SIZE) std::atomic_size_t NextFreeIdx = {0};
-    alignas(CACHELINE_SIZE) std::atomic_size_t NextServingIdx = {1};
+    alignas(CACHELINE_SIZE) std::vector<PaddedFlag> LockedFlags;
+    alignas(CACHELINE_SIZE) std::atomic_size_t      NextFreeIdx = {0};
+    alignas(CACHELINE_SIZE) std::atomic_size_t      NextServingIdx = {1};
 };
 
 class GraunkeAndThakkarSpinLock
@@ -313,16 +311,18 @@ public:
     GraunkeAndThakkarSpinLock(size_t maxThreads=std::thread::hardware_concurrency()) :
         LockedFlags(maxThreads)
     {
+        for (auto &flag : LockedFlags)
+            flag.first = 1;
+
         assert(Tail.is_lock_free());
-        std::fill(LockedFlags.begin(), LockedFlags.end(), 1);
-        Tail = reinterpret_cast<uintptr_t>(&LockedFlags[0]);
+        Tail = reinterpret_cast<uintptr_t>(&LockedFlags[0].first);
         assert((Tail&1) == 0); // Make sure there's space to store the old flag value in the LSB
     }
 
     ALWAYS_INLINE void Enter()
     {
         // Create new tail by chaining my synchronization variable into the list
-        const auto &newFlag = LockedFlags[GetThreadIndex()];
+        const auto &newFlag = LockedFlags[GetThreadIndex()].first;
         const auto newTail = reinterpret_cast<uintptr_t>(&newFlag)|static_cast<uintptr_t>(newFlag);
         const auto ahead = Tail.exchange(newTail);
 
@@ -338,7 +338,7 @@ public:
     ALWAYS_INLINE void Leave()
     {
         // Flipping synchronization variable enables next thread in line to enter CS
-        auto &flag = LockedFlags[GetThreadIndex()];
+        auto &flag = LockedFlags[GetThreadIndex()].first;
         flag = !flag;
     }
     
@@ -352,9 +352,12 @@ private:
     }
 
 private:
+    using PaddedFlag = std::pair<std::atomic_uint16_t, uint8_t[CACHELINE_SIZE-sizeof(std::atomic_uint16_t)]>;
+    static_assert(sizeof(PaddedFlag) == CACHELINE_SIZE, "");
+
     // In the LSB the old value of the flag is stored
-    std::atomic<uintptr_t>            Tail;
-    std::vector<std::atomic_uint16_t> LockedFlags;
+    alignas(CACHELINE_SIZE) std::atomic<uintptr_t>  Tail;
+    alignas(CACHELINE_SIZE) std::vector<PaddedFlag> LockedFlags;
 
     static_assert(sizeof(decltype(LockedFlags)::value_type) > 1,
                   "Flag size > 1 required: thanks to alginment, old flag value can be stored in LSB");
