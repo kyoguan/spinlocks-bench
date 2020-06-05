@@ -6,6 +6,10 @@
 #include <chrono>
 #include <random>
 
+#if defined(__SSE2__)
+#include <xmmintrin.h>  // _mm_pause
+#endif
+
 constexpr size_t CACHELINE_SIZE = 64;
 
 #define WIN     0
@@ -28,8 +32,22 @@ ALWAYS_INLINE static void CpuRelax()
 {
 #if (OS == WIN)
     _mm_pause();
-#elif (OS == UNIX)
-    asm("pause");
+#elif defined(__SSE2__)  // AMD and Intel
+    _mm_pause();
+#elif defined(__i386__) || defined(__x86_64__)
+    asm volatile("pause");
+#elif defined(__aarch64__)
+    asm volatile("wfe");
+#elif defined(__armel__) || defined(__ARMEL__)
+    asm volatile ("nop" ::: "memory");  // default operation - does nothing => Might lead to passive spinning.
+#elif defined(__arm__) || defined(__aarch64__) // arm big endian / arm64
+    __asm__ __volatile__ ("yield" ::: "memory");
+#elif defined(__ia64__)  // IA64
+    __asm__ __volatile__ ("hint @pause");
+#elif defined(__powerpc__) || defined(__ppc__) || defined(__PPC__) // PowerPC
+     __asm__ __volatile__ ("or 27,27,27" ::: "memory");
+#else  // everything else.
+     asm volatile ("nop" ::: "memory");  // default operation - does nothing => Might lead to passive spinning.
 #endif
 }
 
