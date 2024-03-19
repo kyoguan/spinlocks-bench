@@ -64,6 +64,55 @@ std::vector<std::chrono::milliseconds> CreateBenchmarkRuns(size_t numRuns, size_
 
     return runs;
 }
+
+template<>
+std::vector<std::chrono::milliseconds> CreateBenchmarkRuns<McsLock>(size_t numRuns, size_t numItersPerRun, size_t numThreads)
+{
+    std::vector<std::chrono::milliseconds> runs(numRuns);
+    const size_t numItersPerThread = numItersPerRun/numThreads;
+    volatile std::atomic_size_t cnt = {0};
+
+    for (size_t i=0; i<numRuns; i++)
+    {
+        std::vector<std::future<void>> futures(numThreads);
+        McsLock lock;
+        std::atomic_size_t numThreadsReady = {0};
+        const auto startTime = std::chrono::high_resolution_clock::now();
+
+        for (size_t j=0; j<numThreads; j++)
+        {
+            futures[j] = std::async(std::launch::async, [&, j]()
+            {
+                //BindThisThreadToCore(j);
+
+                // Wait until all threads are ready
+                numThreadsReady++;
+                while (numThreadsReady < numThreads)
+                    CpuRelax();
+
+                // 
+                for (size_t k=0; k<numItersPerThread; k++)
+                {
+                    McsLock::QNode node;
+                    lock.Enter(node);
+                    //lock.Enter();
+                    for (size_t l=0; l<16; l++)
+                        cnt++;
+                    lock.Leave(node);
+                    //lock.Leave();
+                }
+            });
+        }
+
+        for (auto &f : futures)
+            f.wait();
+
+        const auto endTime = std::chrono::high_resolution_clock::now();
+        runs[i] = std::chrono::duration_cast<std::chrono::milliseconds>(endTime-startTime);
+    }
+
+    return runs;
+}
 #else
 template<typename LockType>
 std::vector<std::chrono::milliseconds> CreateBenchmarkRuns(size_t numRuns, size_t numItersPerRun, size_t numThreads)
@@ -184,6 +233,7 @@ void RunBenchmarks()
         RunBenchmark<PropBoTicketSpinLock>("PropBoTicketSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<AndersonSpinLock>("AndersonSpinLock", numRuns, numItersPerRun, i);
         RunBenchmark<GraunkeAndThakkarSpinLock>("GraunkeAndThakkarSpinLock", numRuns, numItersPerRun, i);
+        RunBenchmark<McsLock>("McsLock", numRuns, numItersPerRun, i);
 #if 0
         RunBenchmark<SpinRwLockNaive>("SpinRwLockNaive", numRuns, numItersPerRun, i);
         RunBenchmark<SpinRwLockNaivePerThreadReadCounts>("SpinRwLockNaivePerThreadReadCounts", numRuns, numItersPerRun, i);

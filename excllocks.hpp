@@ -198,7 +198,7 @@ public:
     std::atomic_bool Locked = {false};
 
 private:
-    static const size_t MAX_WAIT_ITERS = 0x10000;
+    static const size_t MAX_WAIT_ITERS = 8;
     static const size_t MIN_BACKOFF_ITERS = 32;
 };
 
@@ -308,7 +308,7 @@ private:
 class GraunkeAndThakkarSpinLock
 {
 public:
-    GraunkeAndThakkarSpinLock(size_t maxThreads=std::thread::hardware_concurrency()) :
+    GraunkeAndThakkarSpinLock(size_t maxThreads=128/*std::thread::hardware_concurrency()*/) :
         LockedFlags(maxThreads)
     {
         for (auto &flag : LockedFlags)
@@ -347,6 +347,7 @@ private:
     {
         static std::atomic_size_t threadCounter = {0};
         thread_local size_t threadIdx = threadCounter++;
+        
         assert(threadIdx < LockedFlags.size());
         return threadIdx;
     }

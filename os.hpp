@@ -14,7 +14,7 @@ constexpr size_t CACHELINE_SIZE = 64;
 
 #define WIN     0
 #define UNIX    1
-#define OS      WIN
+#define OS      UNIX
 
 #if (OS == WIN)
     #define WIN32_LEAN_AND_MEAN
